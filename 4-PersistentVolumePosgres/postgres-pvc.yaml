@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce # Bu alanı aynı anda sadece 1 Pod okuyup yazabilir
+  resources:
+    requests:
+      storage: 2Gi # SSD'den 2 GB'lık alan rezerve ediyoruz
