@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profesyonel-nginx
+  labels:
+    app: web-sunucu
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: web-sunucu
+  template:
+    metadata:
+      labels:
+        app: web-sunucu
+    spec:
+      containers:
+      - name: nginx-container
+        image: nginx:latest
+        ports:
+        - containerPort: 80

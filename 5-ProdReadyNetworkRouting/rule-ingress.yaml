@@ -1,0 +1,66 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ana-yonlendirici
+  annotations:
+    # Bu kuralı Traefik'in işlemesini söylüyoruz
+    kubernetes.io/ingress.class: traefik
+spec:
+  ingressClassName: traefik
+spec:
+  rules:
+  # 1. Kural: .NET API için
+  - host: api.ozgur.lokal
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: dotnet-api-servisi
+            port:
+              number: 80
+  # 2. Kural: React Uygulaması için
+  - host: app.ozgur.lokal
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: react-servisi
+            port:
+              number: 80
+  # 3. Kural: React Uygulaması için
+  - host: prompter.ozgur.lokal
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: prompter-nginx-service
+            port:
+              number: 80
+  # 4. Kural: React Uygulaması için
+  - host: web.ozgur.lokal
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: profesyonel-nginx-servisi
+            port:
+              number: 80
+  # 5. Kural: React Uygulaması için
+  - host: postgres.ozgur.lokal
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: postgres-service
+            port:
+              number: 5432

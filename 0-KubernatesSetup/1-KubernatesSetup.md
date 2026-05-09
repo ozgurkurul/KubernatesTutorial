@@ -1,9 +1,28 @@
 # Kubernetes Kurulumu
 
-10 GB RAM'in ve hızlı bir SSD'n var. Bu donanımı en verimli şekilde kullanmak için **K3s** kuracağız.
-
 ### Neden Tam Sürüm (Vanilla) Kubernetes Değil de K3s?
-Tam sürüm Kubernetes, sadece kendi yönetim bileşenleri (control plane) için 2-3 GB RAM tüketebilir. Rancher tarafından geliştirilen ve tamamen "production-ready" (canlı ortam onaylı) olan **K3s**, içindeki gereksiz eklentilerden arındırılmış tek bir binary dosyasıdır. Sadece **~500 MB RAM** harcar ve geriye kalan 9.5 GB RAM'i tamamen senin uygulamalarına bırakır. 
+Tam sürüm Kubernetes, sadece kendi yönetim bileşenleri (control plane) için 2-3 GB RAM tüketebilir. Rancher tarafından geliştirilen ve tamamen "production-ready" (canlı ortam onaylı) olan **K3s**, içindeki gereksiz eklentilerden arındırılmış tek bir binary dosyasıdır. Sadece **~500 MB RAM** harcar. 
+
+### K3s ile Tam Sürüm (Vanilla) K8s Arasında Ne Fark Var?
+
+K3s bir "çakma" veya "eksik" Kubernetes değildir. Cloud Native Computing Foundation (CNCF) tarafından **resmi olarak sertifikalandırılmış, %100 uyumlu bir Kubernetes dağıtımıdır.** Vanilla K8s'in geçtiği tüm uygunluk testlerinden geçer.
+
+Peki Rancher ekibi K8s'i nasıl 50 MB'lık tek bir dosyaya sığdırdı? Şunları atarak:
+
+1. **Bulut Sağlayıcı Çöplüğü (Cloud-Provider Bloat):** Vanilla K8s'in kaynak kodunda Amazon AWS, Google GCP, Azure, Alibaba Cloud gibi platformlara özel milyonlarca satır eski (in-tree) kod bulunur. K3s bunları silip atmıştır. (Zaten kendi çıplak sunucunda çalışıyorsun, bunlara ihtiyacın yok).
+2. **Ağır Veritabanı (Etcd yerine SQLite):** K8s, cluster durumunu tutmak için `etcd` adında RAM canavarı bir veritabanı kullanır. K3s ise senin gibi tek sunuculu (single-node) kurulumlarda arka planda son derece hafif olan **SQLite** kullanır.
+3. **Docker Bağımlılığı:** Zaten konuştuğumuz gibi, K3s doğrudan `containerd` ile gelir.
+4. **Eski/Ölü Özellikler:** Alpha (deneysel) aşamasında kalmış, kimsenin kullanmadığı özellikleri koddan çıkarmışlardır.
+
+### Geliştirme Sürecinde Bir Eksiklik Hisseder misin?
+
+**Kesinlikle hayır. Koca bir sıfır.**
+
+Mikroservis mimarileri tasarlarken, .NET API'lerini veya cross-platform frontend uygulamalarını K8s'e deploy ederken yazacağın YAML dosyalarının bir harfi bile değişmez. `kubectl` komutları %100 aynı çalışır.
+
+Vanilla K8s kursaydın, sırf K8s'in kendi yönetim bileşenleri (Control Plane) sunucuya ayırdığın o 10 GB RAM'in 2-3 GB'ını yutacaktı. K3s ise şu an sadece 500 MB civarı RAM harcıyor ve geriye kalan tüm gücü senin uygulamalarına bırakıyor. Bir eksiklik hissetmek bir yana, performans açısından büyük bir avantaj yaşıyorsun. Tek eksiği, 10.000 sunuculuk bir cluster kurmak istersen yaşarsın (ki orada zaten bulut firmalarının K8s hizmetleri devreye girer).
+
+---
 
 Kurulumu çok basittir. Terminalden şu adımları izleyerek sunucunu saniyeler içinde bir Kubernetes Node'una çevirebiliriz:
 

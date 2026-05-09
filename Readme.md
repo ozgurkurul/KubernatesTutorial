@@ -57,5 +57,6 @@ Senin hedeflerine ulaşmak için şu adımları izleyeceğiz:
 2. [ConfigMap Oluşturma](./2-ConfigMap.md)
 3. Örnek Proje Yüklemeleri
     1. [Statik HTML Sayfası ve Nginx](./3.1-InstallStaticWeb.md)
-    2. [React Projesi](./3.2-ReactProject.md)
-    3. [Net Web Api Projesi](./3.3-NetWebApi.md)
+    2. [React Projesi](./3.2-ReactProject.md) [Proje](./2.2-ReactProject)
+    3. [Net Web Api Projesi](./3.3-NetWebApi.md) [Proje](./2.3-NetWebApi)
+4. [Persistent Volume](./4-PersistentVolume.md)
