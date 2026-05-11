@@ -176,3 +176,26 @@ Artık K8s üzerinde her şey senin kontrolünde. MacBook'unun tarayıcısından
 
 O sayfayı her yenilediğinde, K8s arka planda isteğini o an çalışan 5 farklı Nginx Pod'undan birine yönlendiriyor (Round-robin Load Balancing).
 
+
+
+## Yapıların Temizlenmesi
+
+```bash
+# Ingress kuralını sil
+kubectl delete ingress ana-yonlendirici
+
+# Servisleri sil
+kubectl delete service dotnet-api-servisi react-servisi prompter-nginx-service profesyonel-nginx-servisi postgres-service
+
+# Deploymentları sil
+kubectl delete deployment dotnet-api-deployment react-deployment prompter-nginx profesyonel-nginx postgres-db
+
+# Kalıcı disk talebi ve şifreleri sil
+kubectl delete pvc postgres-pvc
+
+kubectl delete secret postgres-secret
+```
+*Not: Grafana Monitoring ajanlarını da (Alloy) silmek istersen aşağıdaki komutunu kullanabilirsin.*
+```bash
+helm uninstall grafana-k8s-monitoring
+```
