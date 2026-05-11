@@ -63,10 +63,9 @@ Artık dışarıdaki hiçbir bulut sistemine (Cloudflare, AWS vb.) bağlı deği
 
 Lens üzerinde Vault podunu ve `Valid` yazısını görebildin mi?
 
+---
 
-## Vault'u ve ona ait tüm kalıntıları sistemden temizleme
-
-### 1. Aşama: Tam Temizlik (Nükleer Seçenek)
+#### Vault'u ve ona ait tüm kalıntıları sistemden temizleme
 
 Aşağıdaki komutları sırasıyla terminaline yapıştır. Bu işlemler Vault'u, hatalı şifreleri ve bozuk konfigürasyonları tamamen silecek:
 
@@ -79,12 +78,94 @@ kubectl delete namespace vault
 
 # 3. External Secrets içindeki o eski/hatalı vault şifresini temizle
 kubectl delete secret vault-token -n external-secrets --ignore-not-found
-
 ```
 
 *(Not: `namespace` silme işlemi 10-15 saniye sürebilir, terminalin komutu tamamlamasını bekle.)*
 
+---
 
+## Vault Arayüzünü (UI) Lens Üzerinden Açmak
+
+HashiCorp Vault'un dünya çapında bu kadar sevilmesinin sebebi harika bir görsel arayüze (Web UI) sahip olmasıdır. Lens sayesinde bu arayüze tek tıkla bağlanacağız:
+
+### Sürecin Felsefesi: "Kasa, Kurye ve Vitrin"
+
+Sistemi 3 ana aktörle düşünebilirsin:
+
+1. **HashiCorp Vault (Kasa):** Şifrelerin şifrelenmiş halde tutulduğu, kimsenin dışarıdan doğrudan göremediği yüksek güvenlikli çelik kasadır.
+2. **External Secrets Operator - ESO (Kurye):** Kasanın şifresini (root) bilen tek yetkilidir. Sen ona "Bana Vault'tan *postgres* şifresini getir" dersin (`ExternalSecret` kuralı ile). O da gider, kasadan alır ve K3s'in içine standart bir K8s Secret olarak bırakır.
+3. **Lens Desktop (Vitrin/Kokpit):** Kuryenin getirdiği şifreleri gördüğün ve podları izlediğin ekrandır.
+
+**Önemli Detay:** Lens Desktop doğrudan Vault'un *içini* göremez ve değiştiremez (güvenlik gereği). Lens, sadece ESO'nun (Kurye) getirdiği nihai şifreleri görebilir.
+
+Peki biz bu şifreleri Vault içinde nasıl yöneteceğiz? Sürekli terminale komut mu yazacağız? **Hayır!**
+
+
+### UI Lens Üzerinden Açmak
+
+1. **Lens Desktop**'ı aç.
+2. Sol menüden **Network** -> **Services** kısmına tıkla.
+3. Çıkan listede `vault` isimli servisi bul ve üzerine tıkla.
+4. Sağ taraftan açılan detay panelinde, aşağılara doğru **Ports** bölümünü göreceksin. Orada `8200/TCP` portunun yanındaki **"Forward" (İleri Ok/Bağlantı)** ikonuna tıkla.
+5. Lens senin için otomatik olarak tarayıcında `http://localhost:XXXX` gibi bir sayfa açacaktır.
+
+**Vault'a Giriş:**
+
+* Karşına çıkan ekranda "Token" seçeneğini işaretle.
+* Token kısmına `root` yaz ve "Sign In" de.
+
+Hoş geldin! Şu an doğrudan i5 işlemcili sunucunda çalışan, banka düzeyindeki güvenlik kasanın arayüzündesin.
+
+### Şifreleri Vault UI Üzerinden Yönetmek
+
+Arayüze girdiğinde şifreleri yönetmek çok kolaydır:
+
+1. Ekranda **`secret/`** yazan bir klasör göreceksin (buna Engine denir), ona tıkla.
+2. Sağ üstten **"Create secret"** butonuna bas.
+3. **Path for this secret:** Şifrenin adını yaz (Örn: `mongodb-credentials`).
+4. **Secret Data:** Alt kısımda anahtar-değer (Key-Value) şeklinde şifrelerini ekle. Örneğin:
+* Key: `username` | Value: `admin`
+* Key: `password` | Value: `cokGizliSifre123`
+
+
+5. **Save** diyerek kaydet.
+
+Artık Kasa'da (Vault) yeni bir şifren var!
+
+---
+
+### Lens ile Süreci Tamamlamak
+
+Şifreyi Vault arayüzünden ekledikten sonra, tek yapman gereken Kurye'ye (ESO) bunu K3s içine getirmesini söylemektir.
+
+1. Lens Desktop'ta sol menüden **Custom Resources -> external-secrets.io -> ExternalSecret** kısmına gel.
+2. Sağ alt köşedeki **"+"** butonuna bas.
+3. Aşağıdaki gibi basit bir "Kurye Talimatı" yazıp kaydet:
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: mongodb-secret-kurye # Kuralın adı
+  namespace: default
+spec:
+  refreshInterval: "1h"
+  secretStoreRef:
+    name: vault-backend # Kasamızın adı
+    kind: ClusterSecretStore
+  target:
+    name: mongo-auth # K3s içinde oluşacak son şifrenin adı
+  data:
+  - secretKey: mongodb-password # K3s'teki değişkenin adı
+    remoteRef:
+      key: secret/mongodb-credentials # Vault'taki dizin
+      property: password # Vault'taki anahtar
+
+```
+
+
+4. Bunu kaydettiğin an Lens menüsünden **Config -> Secrets** sekmesine gidip, `mongo-auth` şifresinin saniyeler içinde oraya otomatik geldiğini gözlerinle görebilirsin.
+
+**Özetle Workflow:** Vault UI üzerinden form doldurarak şifreni kasaya koy -> Lens üzerinden `ExternalSecret` kuralını ekle -> Şifrenin otomatik olarak K3s Secrets bölümüne gelmesini Lens'ten izle.
 
 
 
