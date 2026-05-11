@@ -4,6 +4,14 @@ helm repo add grafana https://grafana.github.io/helm-charts &&
     --version "^4" --namespace "default" --create-namespace --values - <<'EOF'
 cluster:
   name: ozgurvm2-cluster
+collectorCommon:
+  alloy:
+    readinessProbe:
+      initialDelaySeconds: 60
+      timeoutSeconds: 5
+    livenessProbe:
+      initialDelaySeconds: 60
+      timeoutSeconds: 5
 destinations:
   grafana-cloud-metrics:
     type: prometheus
@@ -102,15 +110,6 @@ collectors:
     presets:
       - privileged
       - daemonset
-collectorCommon:
-  alloy:
-    remoteConfig:
-      enabled: true
-      url: https://fleet-management-prod-024.grafana.net
-      auth:
-        type: basic
-        username: "1587697"
-        password: ${GRAFANA_TOKEN}
 telemetryServices:
   kube-state-metrics:
     deploy: true
@@ -119,7 +118,7 @@ telemetryServices:
   windows-exporter:
     deploy: false
   opencost:
-    deploy: true
+    deploy: false
     metricsSource: grafana-cloud-metrics
     opencost:
       exporter:
