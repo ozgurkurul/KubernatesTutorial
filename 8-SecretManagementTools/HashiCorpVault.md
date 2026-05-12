@@ -192,6 +192,19 @@ kubectl delete secret vault-token -n external-secrets --ignore-not-found
 
 ## Lens Desktop Kullanımı
 
+### Sürecin Felsefesi: "Kasa, Kurye ve Vitrin"
+
+Sistemi 3 ana aktörle düşünebilirsin:
+
+1. **HashiCorp Vault (Kasa):** Şifrelerin şifrelenmiş halde tutulduğu, kimsenin dışarıdan doğrudan göremediği yüksek güvenlikli çelik kasadır.
+2. **External Secrets Operator - ESO (Kurye):** Kasanın şifresini (root) bilen tek yetkilidir. Sen ona "Bana Vault'tan *postgres* şifresini getir" dersin (`ExternalSecret` kuralı ile). O da gider, kasadan alır ve K3s'in içine standart bir K8s Secret olarak bırakır.
+3. **Lens Desktop (Vitrin/Kokpit):** Kuryenin getirdiği şifreleri gördüğün ve podları izlediğin ekrandır.
+
+**Önemli Detay:** Lens Desktop doğrudan Vault'un *içini* göremez ve değiştiremez (güvenlik gereği). Lens, sadece ESO'nun (Kurye) getirdiği nihai şifreleri görebilir.
+
+Peki biz bu şifreleri Vault içinde nasıl yöneteceğiz? Sürekli terminale komut mu yazacağız? **Hayır!**
+
+
 ### Lens Desktop'tan Başarıyı Teyit Edelim
 
 Şimdi Lens Desktop'a geçip operasyonun başarısını izleyebiliriz:
@@ -216,36 +229,19 @@ Artık `secret/test/api/track-me-in-the-road` yoluna istediğin kadar parametre 
 
 HashiCorp Vault'un dünya çapında bu kadar sevilmesinin sebebi harika bir görsel arayüze (Web UI) sahip olmasıdır. Lens sayesinde bu arayüze tek tıkla bağlanacağız:
 
-### Sürecin Felsefesi: "Kasa, Kurye ve Vitrin"
-
-Sistemi 3 ana aktörle düşünebilirsin:
-
-1. **HashiCorp Vault (Kasa):** Şifrelerin şifrelenmiş halde tutulduğu, kimsenin dışarıdan doğrudan göremediği yüksek güvenlikli çelik kasadır.
-2. **External Secrets Operator - ESO (Kurye):** Kasanın şifresini (root) bilen tek yetkilidir. Sen ona "Bana Vault'tan *postgres* şifresini getir" dersin (`ExternalSecret` kuralı ile). O da gider, kasadan alır ve K3s'in içine standart bir K8s Secret olarak bırakır.
-3. **Lens Desktop (Vitrin/Kokpit):** Kuryenin getirdiği şifreleri gördüğün ve podları izlediğin ekrandır.
-
-**Önemli Detay:** Lens Desktop doğrudan Vault'un *içini* göremez ve değiştiremez (güvenlik gereği). Lens, sadece ESO'nun (Kurye) getirdiği nihai şifreleri görebilir.
-
-Peki biz bu şifreleri Vault içinde nasıl yöneteceğiz? Sürekli terminale komut mu yazacağız? **Hayır!**
-
-
 ### UI Lens Üzerinden Açmak
 
 1. **Lens Desktop**'ı aç.
-2. Sol menüden **Network** -> **Services** kısmına tıkla.
-3. Çıkan listede `vault` isimli servisi bul ve üzerine tıkla.
+2. Sol menüden **Network -> Services** sekmesine git.
+3. Listeden `vault` (veya `vault-active`) servisine tıkla.
 4. Sağ taraftan açılan detay panelinde, aşağılara doğru **Ports** bölümünü göreceksin. Orada `8200/TCP` portunun yanındaki **"Forward" (İleri Ok/Bağlantı)** ikonuna tıkla.
 5. Lens senin için otomatik olarak tarayıcında `http://localhost:XXXX` gibi bir sayfa açacaktır.
+6. Tarayıcıda açılan ekranda **Token** seçeneğini işaretle ve şifreleme adımında aldığın o **Root Token** veya **Initial Root Token**'ı girerek, "Sign In" de ve içeri gir.
 
-**Vault'a Giriş:**
 
-* Karşına çıkan ekranda "Token" seçeneğini işaretle.
-* Token kısmına `root` yaz ve "Sign In" de.
+## Şifreleri Vault UI Üzerinden Yönetmek 
 
-Hoş geldin! Şu an doğrudan i5 işlemcili sunucunda çalışan, banka düzeyindeki güvenlik kasanın arayüzündesin.
-
-### Şifreleri Vault UI Üzerinden Yönetmek
-
+### Dev Mode Üzerinden Şifre Oluşturma
 Arayüze girdiğinde şifreleri yönetmek çok kolaydır:
 
 1. Ekranda **`secret/`** yazan bir klasör göreceksin (buna Engine denir), ona tıkla.
@@ -255,10 +251,75 @@ Arayüze girdiğinde şifreleri yönetmek çok kolaydır:
 * Key: `username` | Value: `admin`
 * Key: `password` | Value: `cokGizliSifre123`
 
-
 5. **Save** diyerek kaydet.
 
 Artık Kasa'da (Vault) yeni bir şifren var!
+
+
+### Production-Ready Üzerinden Şifre Oluşturma
+
+
+Yalnız burada "Production-Ready" (Canlıya Hazır) Vault kullanmanın getirdiği ufak ama çok önemli bir mimari fark var: **Kasa şu an tamamen boş bir oda gibi.** "Dev Mode" kullanırken Vault bizim için `secret/` adında bir çekmeceyi otomatik hazırlıyordu. Şimdi gerçek bir DevOps uzmanı gibi o çekmeceyi (Secrets Engine) kendi ellerimizle kuracağız.
+
+### 1. Adım: Çekmeceyi Kurma (Sadece İlk Sefere Mahsus)
+
+1. Sol menüden **Secrets Engines**'e tıkla.
+2. Sağ üstteki **"Enable new engine"** butonuna bas.
+3. Çıkan listeden **"KV"** (Key-Value) seçeneğini işaretleyip aşağıdan **Next** de.
+4. **Path:** `secret` yaz (küçük harfle).
+5. **Version:** `2` olarak kalsın (versiyonlama özelliği sağlar).
+6. **"Enable Engine"** diyerek çekmecemizi kur.
+
+### 2. Adım: TrackMeInTheRoad Şifrelerini Ekleme
+
+1. Az önce oluşturduğun **`secret/`** engine'ine tıkla.
+2. Sağ üstten **"Create secret"** butonuna bas.
+3. **Path for this secret** kısmına klasör hiyerarşimizi yaz:
+`test/api/track-me-in-the-road`
+4. **Secret Data** bölümünde, "Key" ve "Value" kutucuklarına o çift alt tireli (`__`) verilerimizi sırayla girmeye başla (her yeni veri için "Add" butonuna bas):
+* **Key:** `ConnectionStrings__Database`
+* **Value:** `Host=localhost;Port=5432;Database=TrackMeInTheRoad.Test;Username=sql_admin;Password=xxxxxxxxx;`
+* **Key:** `Jwt__Issuer`
+* **Value:** `TrackMeInTheRoadApi`
+* **Key:** `Jwt__Audience`
+* **Value:** `TrackMeInTheRoadApp`
+* **Key:** `Jwt__SecretKey`
+* **Value:** `xxxxxxxxx`
+* **Key:** `Jwt__ExpirationInMinutes`
+* **Value:** `1440`
+
+
+5. Tüm verileri girdikten sonra en alttaki **"Save"** butonuna basarak kasanın kapısını kilitle!
+
+İşlem tamam! Veriler şu an SSD'nde mühürlü ve güvende. Bu verileri Lens arayüzünde Vault içinde başarılı bir şekilde kaydedebildin mi? Gördüysen, bir sonraki adımda Kurye'mize (ESO) komut verip bu verileri K3s'in içine tek bir tıkla `track-me-test-env-bundle` olarak indireceğiz!
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ---
 
