@@ -1,0 +1,14 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ozgurkurul-wildcard-cert
+  namespace: default
+spec:
+  # Bu isim çok önemli! Traefik bu Secret'ın içinden sertifikayı okuyacak.
+  secretName: ozgurkurul-tls-secret
+  issuerRef:
+    name: cloudflare-issuer # Senin oluşturduğun ClusterIssuer
+    kind: ClusterIssuer
+  dnsNames:
+  - "*.ozgurkurul.com.tr"
+  - "ozgurkurul.com.tr"
