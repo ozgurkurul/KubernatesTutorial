@@ -25,12 +25,14 @@ helm install cert-manager jetstack/cert-manager \
 Traefik dosyadaki `CF_DNS_API_TOKEN` bilgisini hatırlıyor musun? Bu şifreyi K8s içinde güvenli bir "Secret" olarak saklamalıyız:
 
 ```bash
+# belirli namespace göre
 kubectl create secret generic cloudflare-api-token-secret \
   --from-literal=api-token=${CLOUDFLARE_API_TOKEN} \
   --namespace cert-manager
 
+# genel namespace
 kubectl create secret generic cloudflare-api-token-secret \
-  --from-literal=api-token="${CLOUDFLARE_API_TOKEN}" \
+  --from-literal=api-token=${CLOUDFLARE_API_TOKEN} \
   -n default
 ```
 
