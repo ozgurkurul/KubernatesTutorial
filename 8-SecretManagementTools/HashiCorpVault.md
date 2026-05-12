@@ -168,6 +168,30 @@ Lens Desktop üzerinden **Custom Resources -> external-secrets.io -> ClusterSecr
 Bu 3 adımı tamamlayıp `Valid` yazısını gördüğün an, sistem %100 "Production-Ready" hale gelmiş olacak.
 
 
+## Vault Sunucu Restart Sonrası İşlemler
+
+### Adım 1: Küllerinden Doğuş ve "Mühür" Kontrolü
+
+Sunucu açıldıktan sonra SSH ile tekrar bağlan ve hemen Vault'un durumuna bak:
+
+```bash
+kubectl get pods -n vault
+```
+
+**Ne Göreceksin?**
+`vault-0` podunun `0/1` durumunda (Ready olmadığını) ama `Running` olduğunu göreceksin. Neden? Çünkü sunucu kapandığında RAM silindi ve Vault güvenlik gereği kendini **Mühürledi (Sealed)**. Kasa şu an fiziksel olarak orada ama kapısı kilitli.
+
+### Adım 2: Kasayı Açma (Unseal) Ritüeli
+
+Kasanın kapısını açmak için o güvende tuttuğun 5 anahtardan 3 tanesine tekrar ihtiyacımız var. Aşağıdaki komutu 3 farklı anahtar için 3 kez çalıştır:
+
+```bash
+kubectl exec -it vault-0 -n vault -- vault operator unseal
+```
+
+3. anahtarı girdiğinde kasanın `Sealed: false` durumuna geçtiğini ve `1/1 Ready` olduğunu göreceksin.
+
+
 ---
 
 ## Vault'u ve ona ait tüm kalıntıları sistemden temizleme
