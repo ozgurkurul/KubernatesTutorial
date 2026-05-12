@@ -1,0 +1,49 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: production-postgres
+  namespace: default
+spec:
+  instances: 2 # 1 Master, 1 Replica olacak şekilde 2 pod ayağa kalkar!
+  
+  # CNPG'nin kendi optimize ettiği PostGIS imajını kullanıyoruz.
+  imageName: ghcr.io/cloudnative-pg/postgis:18-3.6-system-trixie
+  
+  # Şifrelerimizi ve DB adını bağlıyoruz
+  bootstrap:
+    initdb:
+      database: Test_Db_2026 # Veritabanı adın
+      owner: sql_admin # Vault'a girdiğin kullanıcı adıyla eşleşmeli
+      secret:
+        name: cnpg-auth-secret # ESO'dan gelen şifre paketi
+      postInitTemplateSQL:
+        - CREATE EXTENSION postgis;
+        - CREATE EXTENSION postgis_topology;
+        - CREATE EXTENSION fuzzystrmatch;
+        - CREATE EXTENSION postgis_tiger_geocoder;
+
+  # Docker Compose'dan gelen CPU ve RAM limitlerin
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "1.0"
+    limits:
+      memory: "2Gi"
+      cpu: "2.0"
+
+  # Depolama (Volume) ayarı
+  storage:
+    size: 10Gi
+    storageClass: local-path
+
+  # Docker Compose'da yaptığın ince performans ayarları
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "512MB"
+      effective_cache_size: "1536MB"
+      maintenance_work_mem: "128MB"
+      checkpoint_completion_target: "0.9"
+      wal_buffers: "16MB"
+      default_statistics_target: "100"
+      random_page_cost: "1.1"
