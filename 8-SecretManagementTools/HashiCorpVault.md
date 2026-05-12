@@ -4,7 +4,7 @@ Bu kurulumu yaparken Vault'u K3s sunucumuzda **"Dev Mode" (Geliştirici Modu)** 
 
 Hadi kendi yerel kasanızı inşa edelim:
 
-### 1. Adım: HashiCorp Vault'u K3s'e Kurma
+### HashiCorp Vault'u K3s'e Kurma
 
 Önce Vault'un resmi Helm deposunu sunucumuza ekleyelim ve kurulumu başlatalım:
 
@@ -14,12 +14,21 @@ helm repo add hashicorp https://helm.releases.hashicorp.com
 helm repo update
 ```
 
-# Vault'u Dev modunda ve sabit bir kök şifre ile kur
-```bash
-# 1. Namespace'i yeniden aç
-kubectl create namespace vault
+---
 
-# 2. Vault'u sorunsuz parametrelerle kur
+## In-Memory ve Dev Modunda bir kök şifre ile kur
+
+**"Dev Mode" (Geliştirme Modu)**: Vault'u `server.dev.enabled=true` parametresiyle kurduğumuzda, Vault varsayılan olarak **"In-Memory Storage" (Bellek İçi Depolama)** kullanır. Yani tüm şifreler sunucunun **RAM**'inde tutulur. Sunucu kapandığında veya `vault-0` podu yeniden başladığında RAM boşaltıldığı için tüm veriler uçar. Bu mod sadece hızlı testler içindir.
+
+### 1. Adım: Vault'u memory cache parametrelerle kur
+
+**Namespace'i yeniden aç**
+```bash
+kubectl create namespace vault
+```
+
+**Vault'u memory cache parametrelerle kur**
+```bash
 helm install vault hashicorp/vault \
   -n vault \
   --set "server.dev.enabled=true" \
@@ -40,7 +49,6 @@ kubectl create secret generic vault-token \
   --from-literal=token=${HASHICORP_VAULT_DEV_ROOT_TOKEN}
 ```
 
-
 ### 3. Adım: Kasa Köprüsünü (ClusterSecretStore) Kurma
 
 Şimdi ESO'ya, "Senin şifreleri çekeceğin ana kaynak bizim kendi sunucumuzdaki HashiCorp Vault'tur" diyoruz.
@@ -51,21 +59,118 @@ kubectl create secret generic vault-token \
 
 ---
 
-### Lens Desktop'tan Başarıyı Teyit Edelim
+## Kalıcı Production-Ready Kurulum (Raft)
 
-Şimdi Lens Desktop'a geçip operasyonun başarısını izleyebiliriz:
+### Raft Nedir?
 
-1. **Namespaces:** Sol menüden `vault` isimli namespace'e gir ve **Pods** sekmesinde `vault-0` isimli podun yemyeşil (`Running`) olduğunu gör.
-2. **ESO Bağlantısı:** Sol menüden **Custom Resources** -> **external-secrets.io** -> **ClusterSecretStore** yolunu izle.
-3. Listede `vault-backend` satırını göreceksin. Karşısında **STATUS: Valid** yazıyorsa tebrikler!
+Raft, bir "Konsensüs Algoritması"dır. Normalde kurumsal dünyada 3 veya 5 sunuculu kümelerde "Hangi veri doğru?" kararını vermek için kullanılır. Biz senin tek sunuculu sisteminde bunu **"Persistence" (Kalıcılık)** katmanı olarak kullanacağız.
 
-Artık dışarıdaki hiçbir bulut sistemine (Cloudflare, AWS vb.) bağlı değilsin; kendi K3s sunucun içinde askeri düzeyde şifreleme yapan tam bağımsız bir Vault mimarisi kurdun.
+Raft sayesinde:
 
-Lens üzerinde Vault podunu ve `Valid` yazısını görebildin mi?
+1. **Snapshot:** Vault belirli aralıklarla kasanın o anki fotoğrafını çeker ve diske yazar.
+2. **Write-Ahead Log (WAL):** Her yeni "key" eklediğinde, önce bu işlem diske bir kütük olarak işlenir, sonra kasaya girer. Bu sayede elektrik kesilse bile veri kaybı imkansız hale gelir.
+
+### Seal (Mühürleme) Kavramı
+
+Kalıcı kuruluma geçtiğimizde karşımıza çıkan en büyük fark şudur: **Vault "Mühürlü" (Sealed) başlar.** Kasayı bir banka kasası gibi düşün; anahtarlar sende değilse, sunucuyu fiziksel olarak çalsalar bile içindeki veriyi okuyamazlar. Vault başladığında RAM'deki şifreleme anahtarlarını siler. Sen gelip "Unseal" anahtarlarını girmeden kasa açılmaz.
+
+### 1. Adım: Kalıcı Kurulumu Başlatıyoruz
+
+**Önemli:** Eğer daha önce temizlemediysen önce `helm uninstall vault -n vault` ile eskiyi sil.
+
+#### 1. Kurulum Komutu (1 GB Disk Alanıyla)
+
+```bash
+helm install vault hashicorp/vault \
+  -n vault \
+  --create-namespace \
+  --set "server.dev.enabled=false" \
+  --set "server.dataStorage.enabled=true" \
+  --set "server.dataStorage.size=1Gi" \
+  --set "server.ha.enabled=true" \
+  --set "server.ha.raft.enabled=true" \
+  --set "server.ha.raft.setNodeId=true" \
+  --set "server.extraEnvironmentVars.VAULT_DISABLE_MLOCK=true"
+```
+
+#### 2. Kasanın İlk Kurulumu (Initialize)
+
+Pod ayağa kalktığında (`vault-0`), kasanın anahtarlarını oluşturmamız gerekiyor. Bu komutu **hayatında sadece bir kez** çalıştıracaksın:
+
+```bash
+kubectl exec -it vault-0 -n vault -- vault operator init
+```
+
+**DİKKAT:** Bu komut sana 5 tane **"Unseal Key"** ve 1 tane **"Initial Root Token"** verecek. Bunları hemen güvenli bir yere (Not defteri vb.) kopyala. Bunları kaybedersen kasanın içine bir daha asla giremeyiz.
+
+#### 3. Kasanın Kilidini Açma (Unseal)
+
+Şu an Lens'te bakarsan `vault-0` podu `0/1 Ready` görünecektir çünkü kilitli. Kilidi açmak için az önce aldığın 5 anahtardan 3 tanesini sırayla girmelisin:
+
+```bash
+# Bu komutu 3 farklı anahtar için 3 kez çalıştır:
+kubectl exec -it vault-0 -n vault -- vault operator unseal
+```
+
+*(Her seferinde senden bir anahtar isteyecek. 3. anahtardan sonra pod `1/1 Ready` olacak).*
+
+#### 4. Replica Vaults
+Eğer `kubectl get pods -A` çıktısında hemen gözüme çarpan bir mimari detay var. `vault-0` aslanlar gibi çalışırken, `vault-1` ve `vault-2` podları **Pending (Beklemede)** kalmışsa.
+
+Neden bekliyorlar? Çünkü biz Vault'a "HA (Yüksek Erişilebilirlik) modunda çalış" dedik. Vault'un resmi Helm şeması HA modunu gördüğü an varsayılan olarak **3 pod (replica)** ayağa kaldırmaya çalışır. Ancak K3s gibi tek sunuculu (Single-Node) yapılarda, güvenlik kuralları (Anti-Affinity) gereği 3 kasanın aynı fiziksel diske/sunucuya kurulmasına izin verilmez. Bu yüzden diğer ikisi sonsuza kadar `Pending` kalacaktır.
+
+Sistem kaynaklarını (RAM/CPU) boş yere meşgul eden bu hayalet podları hemen temizleyelim ve Kurye'mize (ESO) yeni kasanın anahtarını verelim.
+
+**1. Aşama: Hayalet Podları Temizleme (Optimizasyon)**
+
+Vault'a "Biz tek sunucudayız, HA modunu sadece Raft (diske yazma) için kullanıyoruz, o yüzden sadece 1 pod çalıştır" diyeceğiz.
+
+Mevcut ayarlarımızı koruyarak sadece kopya sayısını (replica) 1'e düşüren şu komutu çalıştır:
+
+```bash
+helm upgrade vault hashicorp/vault \
+  -n vault \
+  --reuse-values \
+  --set "server.ha.replicas=1"
+```
+
+Bu komuttan sonra `kubectl get pods -n vault` yaptığında o `Pending` olan podların anında yok olduğunu ve ortamın tertemiz kaldığını göreceksin.
+
+
+### 2. Aşama: Kuryeye (ESO) Yeni Anahtarı Verme
+
+Kasamızı sıfırlayıp `init` komutuyla mühürlediğimiz için, daha önce Kurye'ye (ESO) verdiğimiz o basit `root` şifresi artık iptal oldu. Kasanın sana verdiği o **Initial Root Token**'ı ESO'ya tanıtmamız gerekiyor.
+
+Lütfen aşağıdaki komutlardaki `${HASHICORP_VAULT_DEV_INITIAL_ROOT_TOKEN}` kısmına kendi yeni Root Token'ını yapıştırıp terminalde çalıştır:
+
+```bash
+# 1. Eski geçersiz şifreyi sil
+kubectl delete secret vault-token -n external-secrets
+
+# 2. Yeni Root Token'ı K3s'e kaydet
+kubectl create secret generic vault-token \
+  --namespace external-secrets \
+  --from-literal=token="${HASHICORP_VAULT_DEV_INITIAL_ROOT_TOKEN}"
+```
+
+### 3. Aşama: Kasa Köprüsünü (ClusterSecretStore) Yenileme
+
+Kurye yeni şifreyi aldı ama köprüyü bir kez dürtmemiz (tetiklememiz) gerekiyor ki gidip kasaya bağlanmayı tekrar denesin.
+
+Daha önce oluşturduğumuz `[vault-store.yaml](vault-store.yaml)` dosyasını yeniden uygulayalım:
+
+```bash
+kubectl apply -f vault-store.yaml
+```
+
+Lens Desktop üzerinden **Custom Resources -> external-secrets.io -> ClusterSecretStore** sekmesine girip `vault-backend` kuralının karşısında tekrar **"Valid"** yazısını gördüğünden emin ol.
+
+Bu 3 adımı tamamlayıp `Valid` yazısını gördüğün an, sistem %100 "Production-Ready" hale gelmiş olacak.
+
 
 ---
 
-#### Vault'u ve ona ait tüm kalıntıları sistemden temizleme
+## Vault'u ve ona ait tüm kalıntıları sistemden temizleme
 
 Aşağıdaki komutları sırasıyla terminaline yapıştır. Bu işlemler Vault'u, hatalı şifreleri ve bozuk konfigürasyonları tamamen silecek:
 
@@ -83,6 +188,29 @@ kubectl delete secret vault-token -n external-secrets --ignore-not-found
 *(Not: `namespace` silme işlemi 10-15 saniye sürebilir, terminalin komutu tamamlamasını bekle.)*
 
 ---
+
+
+## Lens Desktop Kullanımı
+
+### Lens Desktop'tan Başarıyı Teyit Edelim
+
+Şimdi Lens Desktop'a geçip operasyonun başarısını izleyebiliriz:
+
+1. **Namespaces:** Sol menüden `vault` isimli namespace'e gir ve **Pods** sekmesinde `vault-0` isimli podun yemyeşil (`Running`) olduğunu gör.
+2. **ESO Bağlantısı:** Sol menüden **Custom Resources** -> **external-secrets.io** -> **ClusterSecretStore** yolunu izle.
+3. Listede `vault-backend` satırını göreceksin. Karşısında **STATUS: Valid** yazıyorsa tebrikler!
+
+Artık dışarıdaki hiçbir bulut sistemine (Cloudflare, AWS vb.) bağlı değilsin; kendi K3s sunucun içinde askeri düzeyde şifreleme yapan tam bağımsız bir Vault mimarisi kurdun.
+
+Lens üzerinde Vault podunu ve `Valid` yazısını görebildin mi?
+
+
+### Yeni Key Ekleme
+
+Kasa açıldıktan sonra, Lens üzerinden Web UI'ya bağlanabilirsin (Token kısmına `root` değil, az önce `init` komutundan aldığın yeni **Root Token**'ı yazarak).
+
+Artık `secret/test/api/track-me-in-the-road` yoluna istediğin kadar parametre ekle; sunucu kapansa da, K3s yeniden başlasın da verilerin o 1 GB'lık disk alanında sapasağlam kalacak.
+
 
 ## Vault Arayüzünü (UI) Lens Üzerinden Açmak
 
@@ -166,6 +294,5 @@ spec:
 4. Bunu kaydettiğin an Lens menüsünden **Config -> Secrets** sekmesine gidip, `mongo-auth` şifresinin saniyeler içinde oraya otomatik geldiğini gözlerinle görebilirsin.
 
 **Özetle Workflow:** Vault UI üzerinden form doldurarak şifreni kasaya koy -> Lens üzerinden `ExternalSecret` kuralını ekle -> Şifrenin otomatik olarak K3s Secrets bölümüne gelmesini Lens'ten izle.
-
 
 
